@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>声音留存 · 小宇宙平台文稿</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/"><span class="brand-icon" aria-hidden="true">◉</span> 声音留存</a><span class="local-tag"><i></i> 无服务器工作台</span></header>
+  <main>
+    <section class="intro">
+      <span class="eyebrow">PODCAST TO TEXT</span>
+      <h1>听见的好内容，<br>留下来慢慢读。</h1>
+      <p>粘贴一个小宇宙单集链接，读取平台已有的带时间戳文稿。</p>
+    </section>
+    <section class="card input-card" aria-label="读取平台文稿">
+      <form id="form">
+        <label for="url">小宇宙单集链接</label>
+        <textarea id="url" rows="2" required maxlength="4096" placeholder="粘贴 https://www.xiaoyuzhoufm.com/episode/… 或完整分享文字"></textarea>
+        <div class="form-bottom">
+          <span class="language-label">文字来源：平台已有文稿</span>
+          <button id="submit" type="submit">获取节目文字 <span aria-hidden="true">↗</span></button>
+        </div>
+        <p id="form-message" class="message" role="status"></p>
+      </form>
+      <div class="token-form" aria-label="填写小宇宙 access token">
+        <label for="access-token">小宇宙 access token</label>
+        <div class="token-input-row">
+          <input id="access-token" type="password" required maxlength="16384" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="粘贴你自己的 access token">
+        </div>
+        <p class="hint">token 只保留在当前页面内存中，随本次请求发送，不会保存到服务器或浏览器存储。</p>
+        <details class="token-guide" open>
+          <summary>如何获取 access token？</summary>
+          <ol>
+            <li>在系统默认浏览器打开 <a href="https://accounts.xiaoyuzhoufm.com/login" target="_blank" rel="noopener noreferrer">小宇宙账号登录页</a>，按 <kbd>F12</kbd> 打开开发者工具，进入「网络（Network）」并勾选「保留日志（Preserve log）」。</li>
+            <li>使用手机号和验证码登录。登录后，在网络请求中搜索 <code>login-with-sms</code>，选择 <code>https://web-api.xiaoyuzhoufm.com/v1/auth/login-with-sms</code>。</li>
+            <li>打开该请求的「标头（Headers）」→「响应头（Response Headers）」，找到 <code>x-jike-access-token</code>，只复制它的值，粘贴到上面的输入框。</li>
+          </ol>
+          <p class="hint">不要把 token 发给别人，也不要把它提交到 Git。token 失效后重新获取并替换即可。</p>
+        </details>
+      </div>
+      <p id="platform-config" class="hint" role="status"></p>
+    </section>
+    <section id="detail" class="card detail hidden" aria-label="节目文稿">
+      <div class="section-heading"><span class="eyebrow">YOUR EPISODE</span><span id="badge" class="badge">已读取</span></div>
+      <div class="episode-head">
+        <img id="cover" class="cover hidden" alt="节目封面" referrerpolicy="no-referrer">
+        <div><p id="podcast" class="podcast"></p><h2 id="episode-title"></h2><p id="meta" class="muted"></p></div>
+      </div>
+      <p id="source-note" class="hint"></p>
+      <p id="job-error" class="message error" role="status"></p>
+      <div id="files" class="files"></div>
+      <section id="transcript-panel" class="hidden">
+        <div class="transcript-heading"><h3>平台文稿</h3><input id="search" type="search" placeholder="搜索文字…" aria-label="搜索平台文稿"></div>
+        <p id="transcript-note" class="hint">点击时间可以复制该段时间戳。文稿可能有误，请结合原节目核对。</p>
+        <div id="transcript" class="transcript"></div>
+      </section>
+    </section>
+    <section class="history-section" aria-labelledby="history-title">
+      <div class="section-heading"><h2 id="history-title">最近查看</h2><span class="muted">保存在当前浏览器</span></div>
+      <div id="history" class="history"><p class="empty">还没有节目。粘贴一个链接，开始读取。</p></div>
+    </section>
+    <footer>文稿由 Vercel Function 读取小宇宙平台已有内容 · 导出文件在浏览器中生成<br><span id="engine">平台文稿模式</span></footer>
+  </main>
+</body>
+</html>
+

@@ -1,0 +1,10 @@
+__pycache__/
+.venv/
+storage/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+.secrets/
+*.log
+
