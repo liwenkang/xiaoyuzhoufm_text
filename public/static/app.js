@@ -3,9 +3,39 @@
 const $ = (id) => document.getElementById(id);
 let current = null;
 let records = [];
+let isLoading = false;
+let exportUrls = [];
 
 function updateSubmitButton() {
-  $('submit').disabled = !$('url').value.trim() || !$('access-token').value.trim();
+  $('submit').disabled = isLoading || !$('url').value.trim() || !$('access-token').value.trim();
+}
+
+function setLoading(value) {
+  isLoading = value;
+  $('form').setAttribute('aria-busy', String(value));
+  $('submit').classList.toggle('is-loading', value);
+  $('submit-label').textContent = value ? '正在读取…' : '获取节目文字';
+  $('request-progress').classList.toggle('hidden', !value);
+  $('url').readOnly = value;
+  $('access-token').readOnly = value;
+  updateSubmitButton();
+}
+
+function icon(path) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  const stroke = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  stroke.setAttribute('d', path);
+  stroke.setAttribute('stroke', 'currentColor');
+  stroke.setAttribute('stroke-width', '1.8');
+  stroke.setAttribute('stroke-linecap', 'round');
+  stroke.setAttribute('stroke-linejoin', 'round');
+  svg.append(stroke);
+  return svg;
 }
 
 function formatTime(seconds) {
@@ -24,10 +54,20 @@ function timestamp(seconds, separator = ',') {
 }
 
 async function api(path, options) {
-  const response = await fetch(path, options);
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.detail || '请求失败，请稍后重试。');
-  return body;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 35000);
+  try {
+    const response = await fetch(path, {...options, signal: controller.signal});
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.detail || '读取失败，请稍后重新获取文稿。');
+    return body;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('读取时间较长，请稍后重新获取文稿。');
+    if (error instanceof TypeError) throw new Error('网络连接失败，请检查网络后重试。');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const post = (data) => ({
@@ -39,9 +79,11 @@ const post = (data) => ({
 function file(name, content, type) {
   const link = document.createElement('a');
   link.href = URL.createObjectURL(new Blob([content], {type}));
-  link.download = name;
-  link.textContent = `↓ ${name}`;
-  link.addEventListener('click', () => setTimeout(() => URL.revokeObjectURL(link.href), 1000), {once: true});
+  exportUrls.push(link.href);
+  link.setAttribute('download', name);
+  const label = document.createElement('span');
+  label.textContent = name;
+  link.append(icon('M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5'), label);
   return link;
 }
 
@@ -69,6 +111,8 @@ function exportContents(data) {
 }
 
 function renderExports(data) {
+  exportUrls.forEach((url) => URL.revokeObjectURL(url));
+  exportUrls = [];
   const contents = exportContents(data);
   const name = Array.from(String(data.episode.title || data.episode.episode_id || '节目文稿')
     .replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_').trim()).slice(0, 100).join('')
@@ -86,8 +130,10 @@ function renderExports(data) {
 function renderSegments() {
   const query = $('search').value.trim().toLowerCase();
   const fragment = document.createDocumentFragment();
-  (current?.segments || []).filter((segment) => !query || segment.text.toLowerCase().includes(query))
-    .forEach((segment) => {
+  const segments = current?.segments || [];
+  const matches = segments.filter((segment) => !query || segment.text.toLowerCase().includes(query));
+  $('segment-count').textContent = query ? `找到 ${matches.length} / ${segments.length} 段` : `共 ${segments.length} 段`;
+  matches.forEach((segment) => {
       const row = document.createElement('div');
       row.className = 'segment';
       const button = document.createElement('button');
@@ -95,26 +141,58 @@ function renderSegments() {
       button.className = 'timestamp';
       button.textContent = formatTime(segment.start);
       button.title = '复制时间戳';
+      button.setAttribute('aria-label', `复制时间戳 ${formatTime(segment.start)}`);
       button.addEventListener('click', async () => {
-        await navigator.clipboard?.writeText(formatTime(segment.start));
-        button.textContent = '已复制';
-        setTimeout(() => { button.textContent = formatTime(segment.start); }, 900);
+        try {
+          if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+          await navigator.clipboard.writeText(formatTime(segment.start));
+          button.textContent = '已复制';
+          $('copy-message').className = 'copy-message';
+          $('copy-message').textContent = `已复制时间戳 ${formatTime(segment.start)}`;
+          setTimeout(() => { button.textContent = formatTime(segment.start); }, 1200);
+        } catch (_error) {
+          $('copy-message').className = 'copy-message error';
+          $('copy-message').textContent = `无法自动复制，请手动复制时间戳：${formatTime(segment.start)}`;
+        }
       });
       const text = document.createElement('p');
-      text.textContent = segment.text;
+      if (!query) {
+        text.textContent = segment.text;
+      } else {
+        let start = 0;
+        let index;
+        const lowerText = segment.text.toLowerCase();
+        while ((index = lowerText.indexOf(query, start)) !== -1) {
+          text.append(document.createTextNode(segment.text.slice(start, index)));
+          const mark = document.createElement('mark');
+          mark.textContent = segment.text.slice(index, index + query.length);
+          text.append(mark);
+          start = index + query.length;
+        }
+        text.append(document.createTextNode(segment.text.slice(start)));
+      }
       row.append(button, text);
       fragment.append(row);
     });
+  if (!matches.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = '没有找到匹配的段落，试试其他关键词或清空搜索。';
+    fragment.append(empty);
+  }
   $('transcript').replaceChildren(fragment);
+  $('transcript').scrollTop = 0;
 }
 
 function render(data) {
   current = data;
+  $('search').value = '';
+  $('copy-message').textContent = '';
   const episode = data.episode;
   $('detail').classList.remove('hidden');
   $('episode-title').textContent = episode.title || episode.episode_id;
   $('podcast').textContent = episode.podcast_title || '小宇宙播客';
-  $('meta').textContent = `时长 ${formatTime(episode.duration)} · ${(episode.published_at || '').slice(0, 10)}`;
+  $('meta').textContent = [episode.duration ? `时长 ${formatTime(episode.duration)}` : '', (episode.published_at || '').slice(0, 10)].filter(Boolean).join(' · ');
   $('source-note').textContent = data.source_note + (data.end_timestamps_inferred ? ' 部分结束时间由相邻段落推算。' : '');
   const cover = episode.cover_image_url;
   if (cover && cover.startsWith('https://')) {
@@ -126,6 +204,9 @@ function render(data) {
   $('transcript-panel').classList.remove('hidden');
   renderExports(data);
   renderSegments();
+  renderHistory();
+  $('episode-title').focus({preventScroll: true});
+  $('detail').scrollIntoView({block: 'start', behavior: 'auto'});
 }
 
 function saveHistory(data) {
@@ -141,20 +222,29 @@ function saveHistory(data) {
 function renderHistory() {
   const history = $('history');
   if (!records.length) {
-    history.innerHTML = '<p class="empty">还没有节目。粘贴一个链接，开始读取。</p>';
+    history.innerHTML = '<p class="empty">读过的节目会出现在这里，下次打开就能接着读。</p>';
     return;
   }
   history.replaceChildren(...records.map((data) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'history-item';
+    button.setAttribute('aria-current', String(data.episode.episode_id === current?.episode.episode_id));
+    const copy = document.createElement('span');
+    copy.className = 'history-copy';
     const title = document.createElement('span');
     title.className = 'history-title';
     title.textContent = data.episode.title || data.episode.episode_id;
     const state = document.createElement('span');
     state.className = 'history-state';
-    state.textContent = `${data.segments.length} 段`;
-    button.append(title, state);
+    const count = document.createElement('span');
+    count.textContent = `${data.segments.length} 段`;
+    state.append(count, icon('m9 5 7 7-7 7'));
+    const podcast = document.createElement('span');
+    podcast.className = 'history-podcast';
+    podcast.textContent = data.episode.podcast_title || '小宇宙播客';
+    copy.append(title, podcast);
+    button.append(copy, state);
     button.addEventListener('click', () => render(data));
     return button;
   }));
@@ -164,6 +254,10 @@ function loadHistory() {
   try {
     records = JSON.parse(localStorage.getItem('platformTranscripts') || '[]');
     if (!Array.isArray(records)) records = [];
+    records = records.filter((item) => item?.episode && typeof item.episode.episode_id === 'string'
+      && Array.isArray(item.segments) && item.segments.length
+      && item.segments.every((segment) => segment && typeof segment.text === 'string'))
+      .slice(0, 8);
   } catch (_error) {
     records = [];
   }
@@ -172,6 +266,7 @@ function loadHistory() {
 
 $('form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (isLoading) return;
   const url = $('url').value.trim();
   const token = $('access-token').value.trim();
   if (!url || !token) {
@@ -180,7 +275,7 @@ $('form').addEventListener('submit', async (event) => {
     updateSubmitButton();
     return;
   }
-  $('submit').disabled = true;
+  setLoading(true);
   $('form-message').className = 'message';
   $('form-message').textContent = '正在读取平台文稿…';
   try {
@@ -192,20 +287,35 @@ $('form').addEventListener('submit', async (event) => {
     $('form-message').className = 'message error';
     $('form-message').textContent = error.message;
   } finally {
-    updateSubmitButton();
+    setLoading(false);
   }
 });
 
 $('url').addEventListener('input', updateSubmitButton);
 $('access-token').addEventListener('input', updateSubmitButton);
 $('search').addEventListener('input', renderSegments);
+$('toggle-token').addEventListener('click', () => {
+  const visible = $('access-token').type === 'password';
+  $('access-token').type = visible ? 'text' : 'password';
+  $('toggle-token').textContent = visible ? '隐藏' : '显示';
+  $('toggle-token').setAttribute('aria-pressed', String(visible));
+  $('toggle-token').setAttribute('aria-label', visible ? '隐藏 access token' : '显示 access token');
+});
+document.querySelectorAll('a[href="#token-guide"]').forEach((link) => {
+  link.addEventListener('click', () => {
+    $('token-guide').open = true;
+    $('token-guide').querySelector('summary').focus({preventScroll: true});
+  });
+});
+$('cover').addEventListener('error', () => $('cover').classList.add('hidden'));
 loadHistory();
 api('/api/health').then((data) => {
   $('platform-config').textContent = data.auth_mode === 'user_supplied'
-    ? '请在上方填写自己的 access token；它只用于当前请求。'
-    : '请在上方填写 access token。';
+    ? '服务可用 · 请使用自己的 access token'
+    : '请填写自己的 access token 后读取文稿。';
 }).catch(() => {
-  $('platform-config').textContent = '无法读取部署状态，请检查 Vercel Function 配置。';
+  $('platform-config').classList.add('error');
+  $('platform-config').textContent = '暂时无法连接服务，请刷新页面后重试。';
 });
 updateSubmitButton();
 

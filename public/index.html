@@ -4,66 +4,90 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
+  <meta name="description" content="读取小宇宙平台已有文稿，让听见的好内容留下来慢慢读。支持搜索与 TXT、Markdown、SRT、VTT、JSON 导出。">
   <title>声音留存 · 小宇宙平台文稿</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="/"><span class="brand-icon" aria-hidden="true">◉</span> 声音留存</a><span class="local-tag"><i></i> 无服务器工作台</span></header>
+  <a class="skip-link" href="#url">跳到节目链接</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="声音留存首页">
+      <svg class="brand-icon" width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M5 11v6m6-12v18m6-15v12m6-8v4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+      声音留存
+    </a>
+    <nav class="topnav" aria-label="页面导航"><a href="#history-title">最近查看</a><a href="#token-guide">使用帮助</a></nav>
+  </header>
   <main>
-    <section class="intro">
-      <span class="eyebrow">PODCAST TO TEXT</span>
-      <h1>听见的好内容，<br>留下来慢慢读。</h1>
-      <p>粘贴一个小宇宙单集链接，读取平台已有的带时间戳文稿。</p>
+    <section class="intro" aria-labelledby="page-title">
+      <div><h1 id="page-title">听见的好内容，<br>留下来慢慢读。</h1><p>粘贴一个小宇宙单集链接，读取平台已有的带时间戳文稿。</p></div>
+      <p class="intro-note">从一段声音，到一份可以重读的文字。<br><span>搜索段落 · 复制时间戳 · 导出文稿</span></p>
     </section>
-    <section class="card input-card" aria-label="读取平台文稿">
-      <form id="form">
-        <label for="url">小宇宙单集链接</label>
-        <textarea id="url" rows="2" required maxlength="4096" placeholder="粘贴 https://www.xiaoyuzhoufm.com/episode/… 或完整分享文字"></textarea>
-        <div class="form-bottom">
-          <span class="language-label">文字来源：平台已有文稿</span>
-          <button id="submit" type="submit">获取节目文字 <span aria-hidden="true">↗</span></button>
-        </div>
-        <p id="form-message" class="message" role="status"></p>
-      </form>
-      <div class="token-form" aria-label="填写小宇宙 access token">
-        <label for="access-token">小宇宙 access token</label>
-        <div class="token-input-row">
-          <input id="access-token" type="password" required maxlength="16384" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="粘贴你自己的 access token">
-        </div>
-        <p class="hint">token 只保留在当前页面内存中，随本次请求发送，不会保存到服务器或浏览器存储。</p>
-        <details class="token-guide" open>
-          <summary>如何获取 access token？</summary>
-          <ol>
-            <li>在系统默认浏览器打开 <a href="https://accounts.xiaoyuzhoufm.com/login" target="_blank" rel="noopener noreferrer">小宇宙账号登录页</a>，按 <kbd>F12</kbd> 打开开发者工具，进入「网络（Network）」并勾选「保留日志（Preserve log）」。</li>
-            <li>使用手机号和验证码登录。登录后，在网络请求中搜索 <code>login-with-sms</code>，选择 <code>https://web-api.xiaoyuzhoufm.com/v1/auth/login-with-sms</code>。</li>
-            <li>打开该请求的「标头（Headers）」→「响应头（Response Headers）」，找到 <code>x-jike-access-token</code>，只复制它的值，粘贴到上面的输入框。</li>
-          </ol>
-          <p class="hint">不要把 token 发给别人，token 失效后重新获取并替换即可。</p>
-        </details>
+    <!-- impeccable-disable cramped-padding: the two grid children supply 32px / 28px insets; the split surface intentionally reaches the panel edge. -->
+    <section class="input-panel" aria-labelledby="input-title">
+      <div class="workspace">
+        <form id="form" class="workspace-form" aria-describedby="form-message">
+          <h2 id="input-title">读取平台文稿</h2>
+          <div class="field">
+            <label for="url">小宇宙单集链接</label>
+            <textarea id="url" rows="3" required maxlength="4096" placeholder="https://www.xiaoyuzhoufm.com/episode/…" aria-describedby="url-hint"></textarea>
+            <p id="url-hint" class="hint">也可以粘贴完整分享文字或单集 ID。</p>
+          </div>
+          <div class="field">
+            <div class="field-heading"><label for="access-token">小宇宙 access token</label><a class="field-help" href="#token-guide">如何获取？</a></div>
+            <div class="token-input-row">
+              <input id="access-token" type="password" required maxlength="16384" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="粘贴你自己的 access token" aria-describedby="token-hint">
+              <button id="toggle-token" class="token-toggle" type="button" aria-controls="access-token" aria-pressed="false" aria-label="显示 access token">显示</button>
+            </div>
+            <p id="token-hint" class="hint">token 只保留在当前页面内存中，随本次请求发送，不会保存到服务器或浏览器存储。</p>
+          </div>
+          <div class="form-bottom">
+            <p class="source-label"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>文字来源：平台已有文稿</p>
+            <button id="submit" class="primary-button" type="submit"><span id="submit-label">获取节目文字</span><svg class="button-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+          <p id="form-message" class="message" role="status" aria-live="polite" aria-atomic="true"></p>
+          <div id="request-progress" class="request-progress hidden" aria-hidden="true"><span></span><span></span><span></span></div>
+        </form>
+        <aside class="workspace-help" aria-label="使用说明">
+          <h2>让好内容，随时可读</h2>
+          <p>读取完成后，可以直接搜索段落，也可以下载文稿，在你习惯的地方继续阅读。</p>
+          <p class="formats" aria-label="支持导出的文件格式">TXT / Markdown / SRT / VTT / JSON</p>
+          <details id="token-guide" class="token-guide">
+            <summary>如何获取 access token？<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+            <ol>
+              <li>在系统默认浏览器打开 <a href="https://accounts.xiaoyuzhoufm.com/login" target="_blank" rel="noopener noreferrer">小宇宙账号登录页<svg class="external-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 3H3v18h18v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr-only">（在新标签页打开）</span></a>，按 <kbd>F12</kbd> 打开开发者工具，进入「网络（Network）」并勾选「保留日志（Preserve log）」。</li>
+              <li>使用手机号和验证码登录。登录后，在网络请求中搜索 <code>login-with-sms</code>，选择 <code>https://web-api.xiaoyuzhoufm.com/v1/auth/login-with-sms</code>。</li>
+              <li>打开该请求的「标头（Headers）」→「响应头（Response Headers）」，找到 <code>x-jike-access-token</code>，只复制它的值，粘贴到 token 输入框。</li>
+            </ol>
+            <p class="hint">不要把 token 发给别人，token 失效后重新获取并替换即可。</p>
+          </details>
+          <p class="help-footnote">仅支持公开免费单集的已有文稿。平台未提供文稿时，会提示你重新选择节目。</p>
+          <p id="platform-config" class="service-status" role="status"></p>
+        </aside>
       </div>
-      <p id="platform-config" class="hint" role="status"></p>
     </section>
-    <section id="detail" class="card detail hidden" aria-label="节目文稿">
-      <div class="section-heading"><span class="eyebrow">YOUR EPISODE</span><span id="badge" class="badge">已读取</span></div>
+    <section id="detail" class="detail hidden" aria-labelledby="episode-title">
+      <div class="section-heading"><h2 class="section-label">本期文稿</h2><span class="badge">已读取</span></div>
       <div class="episode-head">
-        <img id="cover" class="cover hidden" alt="节目封面" referrerpolicy="no-referrer">
-        <div><p id="podcast" class="podcast"></p><h2 id="episode-title"></h2><p id="meta" class="muted"></p></div>
+        <!-- impeccable-disable broken-image: runtime episode cover; hidden until a valid HTTPS src is assigned and hidden again on load failure. -->
+        <img id="cover" class="cover hidden" width="80" height="80" alt="节目封面" referrerpolicy="no-referrer">
+        <div class="episode-info"><p id="podcast" class="podcast"></p><h3 id="episode-title" tabindex="-1"></h3><p id="meta" class="muted"></p></div>
       </div>
       <p id="source-note" class="hint"></p>
-      <div id="files" class="files"></div>
-      <section id="transcript-panel" class="hidden">
-        <div class="transcript-heading"><h3>平台文稿</h3><input id="search" type="search" placeholder="搜索文字…" aria-label="搜索平台文稿"></div>
+      <div class="export-section"><h3>下载文稿</h3><div id="files" class="files"></div></div>
+      <section id="transcript-panel" class="transcript-panel hidden" aria-labelledby="transcript-title">
+        <div class="transcript-heading"><div><h3 id="transcript-title">平台文稿</h3><p id="segment-count" class="muted" role="status" aria-live="polite" aria-atomic="true"></p></div><div class="search-field"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><input id="search" type="search" placeholder="搜索文稿内容" aria-label="搜索平台文稿" aria-describedby="segment-count"></div></div>
         <p id="transcript-note" class="hint">点击时间可以复制该段时间戳。文稿可能有误，请结合原节目核对。</p>
-        <div id="transcript" class="transcript"></div>
+        <div id="transcript" class="transcript" role="region" tabindex="0" aria-label="文稿段落" aria-describedby="transcript-note"></div>
+        <p id="copy-message" class="copy-message" role="status" aria-live="polite" aria-atomic="true"></p>
       </section>
     </section>
     <section class="history-section" aria-labelledby="history-title">
-      <div class="section-heading"><h2 id="history-title">最近查看</h2><span class="muted">保存在当前浏览器</span></div>
-      <div id="history" class="history"><p class="empty">还没有节目。粘贴一个链接，开始读取。</p></div>
+      <div class="section-heading"><h2 id="history-title">最近查看</h2><span class="muted">保存在当前浏览器，最多 8 期</span></div>
+      <div id="history" class="history"><p class="empty">读过的节目会出现在这里，下次打开就能接着读。</p></div>
     </section>
-    <footer>文稿由 Vercel Function 读取小宇宙平台已有内容 · 导出文件在浏览器中生成<br><span id="engine">平台文稿模式</span></footer>
+    <footer><span class="footer-brand">声音留存</span><p>文字来自小宇宙平台已有文稿 · 文件在浏览器中生成</p><a href="#url">再读一期<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a></footer>
   </main>
 </body>
 </html>
-

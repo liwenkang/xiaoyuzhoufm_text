@@ -11,3 +11,7 @@ run.ps1
 *.egg-info
 build
 dist
+node_modules
+package.json
+package-lock.json
+DESIGN.md

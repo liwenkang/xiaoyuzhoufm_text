@@ -11,6 +11,8 @@
 3. 点击「获取节目文字」，等候本次请求完成。
 4. 搜索文稿、点击时间戳复制，或下载 TXT、Markdown、SRT、VTT、JSON。
 
+token 输入框支持显示/隐藏；点击「如何获取？」会展开操作说明。读取期间会显示状态并防止重复提交；文稿搜索会高亮关键词并显示匹配段落数。
+
 下载按钮及文件名使用「节目名称 + 后缀」，例如 `EP9 有朋一起自驾，不亦乐乎？.txt`。不适合文件名的字符替换为下划线，名称最多保留 100 个字符。
 
 最近查看最多保留 8 个节目的完整文稿，存于当前浏览器的 `localStorage`。这些记录不跨设备同步；清理网站数据会删除记录。浏览器存储空间不足时，当前文稿仍可查看和下载，但新记录可能无法保存。
@@ -76,7 +78,7 @@ npx --yes vercel@latest deploy --prod --yes
 
 ## 本地开发
 
-需要 Python 3.12；运行前端测试还需要 Node.js。所有依赖统一声明在 `pyproject.toml`，`dev` 附加依赖包含 Uvicorn、pytest 和 Ruff。
+需要 Python 3.12；运行前端测试还需要 Node.js。Python 依赖统一声明在 `pyproject.toml`，`dev` 附加依赖包含 Uvicorn、pytest 和 Ruff。前端交互测试的 DOM 替身 LinkeDOM 通过 `package.json` / `package-lock.json` 管理，仅用于开发，不进入 Vercel 部署或用户页面。
 
 Windows 可直接执行：
 
@@ -124,6 +126,8 @@ app/
 public/                 唯一 HTML/CSS/JavaScript 源目录
 tests/                 离线接口、文稿解析和前端测试
 pyproject.toml          运行/开发依赖、测试/lint 和 Vercel 入口
+package.json           前端交互测试命令与开发依赖
+DESIGN.md              页面视觉与交互约定
 .python-version         Python 3.12
 vercel.json             Function 时长配置
 .vercelignore           部署排除项
@@ -136,7 +140,10 @@ run.ps1                 本地开发启动脚本
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check app tests
 node --check public/static/app.js
-node --test tests/platform_frontend.test.cjs
+npm ci --ignore-scripts
+npm test
 ```
 
 自动测试使用 HTTP 替身，不联网获取真实文稿，也不需要真实 token。覆盖链接解析、平台文稿时间戳、上游鉴权错误、token 与 CDN 隔离、重定向和私网阻断，以及当前无状态接口。
+
+前端测试还覆盖 token 显示与帮助、重复提交、加载恢复、网络和剪贴板错误、搜索高亮、历史数据容错及导出文件名。DOM 测试不替代真实浏览器中的视觉和键盘检查。
