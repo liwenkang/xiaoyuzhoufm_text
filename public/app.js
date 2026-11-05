@@ -183,7 +183,6 @@ $('form').addEventListener('submit', async (event) => {
   $('submit').disabled = true;
   $('form-message').className = 'message';
   $('form-message').textContent = '正在读取平台文稿…';
-  $('job-error').textContent = '';
   try {
     const data = await api('/api/transcript', post({url, token}));
     render(data);

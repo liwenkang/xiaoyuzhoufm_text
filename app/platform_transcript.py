@@ -1,25 +1,31 @@
-"""Read existing Xiaoyuzhou transcripts using the operator's own access token.
+"""Read existing Xiaoyuzhou transcripts using the request's user-supplied access token.
 
 The endpoint is not a documented public API. Keep its protocol isolated here.
 Credentials are sent only to the fixed API origin, never to transcript/CDN URLs.
 """
 
+import ipaddress
 import json
 import math
-import os
-import tempfile
+import socket
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from .errors import JobError
-from .media import validate_audio_url
-from .transcriber import Segment
+from .errors import AppError
 
 API_URL = "https://api.xiaoyuzhoufm.com/v1/episode-transcript/get"
 APP_USER_AGENT = "Xiaoyuzhou/2.7.0 (build:1234; iOS 17.0.0)"
-TRANSCRIPT_HOSTS = (".xyzcdn.net",)
+MAX_TRANSCRIPT_BYTES = 16 * 1024 * 1024
+
+
+@dataclass
+class Segment:
+    start: float
+    end: float
+    text: str
+    speaker: str | None = None
 
 
 @dataclass
@@ -31,78 +37,21 @@ class PlatformTranscript:
 def validate_access_token(token):
     token = token.strip()
     if not token or len(token) > 16384 or any(ord(char) < 33 or ord(char) > 126 for char in token):
-        raise JobError("PLATFORM_AUTH_INVALID", "请填写有效的 access token，仅粘贴 token 值，不要包含请求头名称或空格。")
+        raise AppError("PLATFORM_AUTH_INVALID", "请填写有效的 access token，仅粘贴 token 值，不要包含请求头名称或空格。")
     return token
 
 
-def save_access_token(settings, token):
-    token = validate_access_token(token)
-    if settings.xiaoyuzhou_access_token.strip():
-        raise JobError(
-            "PLATFORM_AUTH_ENV_OVERRIDE",
-            "当前凭据由环境变量提供。请移除 XIAOYUZHOU_ACCESS_TOKEN 并重启服务后，再从页面保存。",
-        )
-    path = settings.xiaoyuzhou_token_file
-    temporary = None
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent,
-            prefix=f".{path.name}.", suffix=".tmp", delete=False,
-        ) as output:
-            temporary = output.name
-            output.write(token)
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temporary, path)
-    except OSError:
-        raise JobError("PLATFORM_AUTH_SAVE_FAILED", "保存 access token 失败，请检查本机凭据文件的写入权限。") from None
-    finally:
-        if temporary:
-            try:
-                os.unlink(temporary)
-            except OSError:
-                pass
-
-
-def read_access_token(settings):
-    token = settings.xiaoyuzhou_access_token.strip()
-    if not token:
-        try:
-            if settings.xiaoyuzhou_token_file.stat().st_size > 16384:
-                raise JobError("PLATFORM_AUTH_INVALID", "小宇宙登录凭据文件过大，请只保存 access token。")
-            token = settings.xiaoyuzhou_token_file.read_text(encoding="utf-8-sig").strip()
-        except FileNotFoundError:
-            token = ""
-        except (OSError, UnicodeError):
-            raise JobError("PLATFORM_AUTH_INVALID", "无法读取小宇宙登录凭据文件，请检查本机配置。") from None
-    if not token:
-        raise JobError(
-            "PLATFORM_AUTH_REQUIRED", "尚未配置小宇宙登录凭据，请按 README 配置自己的 access token。"
-        )
-    return validate_access_token(token)
-
-
-def credentials_configured(settings):
-    try:
-        read_access_token(settings)
-        return True
-    except JobError:
-        return False
-
-
-def _read_json(response, limit, check_stop):
+def _read_json(response, limit):
     chunks, size = [], 0
     for chunk in response.iter_bytes():
-        check_stop()
         size += len(chunk)
         if size > limit:
-            raise JobError("PLATFORM_TRANSCRIPT_INVALID", "平台文稿响应过大，已停止读取。")
+            raise AppError("PLATFORM_TRANSCRIPT_INVALID", "平台文稿响应过大，已停止读取。")
         chunks.append(chunk)
     try:
         return json.loads(b"".join(chunks))
     except (ValueError, UnicodeError, RecursionError):
-        raise JobError("PLATFORM_TRANSCRIPT_INVALID", "平台文稿不是有效的 JSON 数据。") from None
+        raise AppError("PLATFORM_TRANSCRIPT_INVALID", "平台文稿不是有效的 JSON 数据。") from None
 
 
 def _milliseconds(value):
@@ -116,8 +65,8 @@ def _milliseconds(value):
 def parse_segments(payload, duration):
     """Convert milliseconds to seconds; infer missing ends from the next start.
 
-Do not silently discard malformed speech segments or guess a timestamp unit.
-"""
+    Do not silently discard malformed speech segments or guess a timestamp unit.
+    """
     try:
         if not isinstance(payload, list) or len(payload) > 200000:
             raise ValueError("Expected a segment array")
@@ -152,15 +101,14 @@ Do not silently discard malformed speech segments or guess a timestamp unit.
             segments.append(Segment(start, round(end, 3), text))
         return PlatformTranscript(list(reversed(segments)), inferred)
     except (ValueError, TypeError, OverflowError):
-        raise JobError(
+        raise AppError(
             "PLATFORM_TRANSCRIPT_INVALID", "平台文稿为空或时间戳格式不受支持，未将其作为完整文稿保存。"
         ) from None
 
 
-def _fetch_transcript_url(episode, token, check_stop):
-    check_stop()
+def _fetch_transcript_url(episode, token):
     if not episode.transcript_media_id:
-        raise JobError("PLATFORM_TRANSCRIPT_MISSING", "小宇宙公开页面未提供这期节目的文稿标识。")
+        raise AppError("PLATFORM_TRANSCRIPT_MISSING", "小宇宙公开页面未提供这期节目的文稿标识。")
     headers = {
         "User-Agent": APP_USER_AGENT,
         "x-jike-app-version": "2.7.0",
@@ -175,65 +123,53 @@ def _fetch_transcript_url(episode, token, check_stop):
                 json={"eid": episode.episode_id, "mediaId": episode.transcript_media_id},
             ) as response:
                 if response.status_code == 401:
-                    raise JobError(
+                    raise AppError(
                         "PLATFORM_AUTH_EXPIRED", "小宇宙登录凭据已失效或无效，请更新自己的 access token。"
                     )
                 if response.status_code == 403:
-                    raise JobError(
+                    raise AppError(
                         "PLATFORM_AUTH_FORBIDDEN", "小宇宙拒绝了文稿访问，可能没有权限；无法据此确认 token 是否过期。"
                     )
                 if response.status_code == 404:
-                    raise JobError("PLATFORM_TRANSCRIPT_MISSING", "小宇宙暂未提供这期的可用文稿。")
+                    raise AppError("PLATFORM_TRANSCRIPT_MISSING", "小宇宙暂未提供这期的可用文稿。")
                 if response.status_code != 200:
-                    raise JobError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "小宇宙文稿接口暂不可用，请稍后再试。")
-                payload = _read_json(response, 256 * 1024, check_stop)
+                    raise AppError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "小宇宙文稿接口暂不可用，请稍后再试。")
+                payload = _read_json(response, 256 * 1024)
         data = payload.get("data") if isinstance(payload, dict) else None
         url = data.get("transcriptUrl") if isinstance(data, dict) else None
         if not isinstance(url, str) or not url:
-            raise JobError("PLATFORM_TRANSCRIPT_MISSING", "小宇宙暂未返回这期的可用文稿地址。")
+            raise AppError("PLATFORM_TRANSCRIPT_MISSING", "小宇宙暂未返回这期的可用文稿地址。")
         return url
     except httpx.HTTPError:
-        raise JobError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "读取平台文稿时网络连接失败，请稍后重试。") from None
+        raise AppError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "读取平台文稿时网络连接失败，请稍后重试。") from None
 
 
-def check_access_token(settings, url=None):
-    """Probe the existing read endpoint without downloading media or creating a job.
-
-    A transcript URL confirms access for this episode at this moment. A missing
-    transcript or a network error cannot establish whether the token is valid.
-    """
+def validate_transcript_url(url):
+    """Allow only HTTPS CDN hosts with public DNS, including on redirects."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
     try:
-        token = read_access_token(settings)
-    except JobError as exc:
-        return {
-            "status": "missing" if exc.code == "PLATFORM_AUTH_REQUIRED" else "invalid",
-            "message": str(exc),
-        }
-    if not url:
-        return {"status": "unchecked", "message": "已配置 access token；粘贴节目链接后自动验证是否可读取文稿。"}
-    from .xiaoyuzhou import fetch_episode
-
+        valid_port = parsed.port in (None, 443)
+    except ValueError:
+        valid_port = False
+    if (
+        parsed.scheme != "https" or not valid_port or parsed.username or parsed.password
+        or not (host == "xyzcdn.net" or host.endswith(".xyzcdn.net"))
+    ):
+        raise AppError("PLATFORM_TRANSCRIPT_UNSAFE_URL", "平台返回的文稿地址不在可信 HTTPS 域名范围内。")
     try:
-        episode = fetch_episode(url)
-        _fetch_transcript_url(episode, token, lambda: None)
-        return {"status": "valid", "message": "access token 验证通过，当前可读取这期节目的平台文稿。"}
-    except JobError as exc:
-        if exc.code == "PLATFORM_AUTH_EXPIRED":
-            return {"status": "rejected", "message": "access token 已失效或无效，请更新凭据后重新检查。"}
-        if exc.code == "PLATFORM_AUTH_FORBIDDEN":
-            return {"status": "forbidden", "message": str(exc)}
-        if exc.code == "PLATFORM_TRANSCRIPT_MISSING":
-            return {"status": "no_transcript", "message": "这期节目未提供可用的平台文稿，无法据此确认 token 是否有效。"}
-        return {"status": "unknown", "message": "暂时无法验证 access token。" + str(exc)}
+        addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        if not addresses or any(not ipaddress.ip_address(item[4][0]).is_global for item in addresses):
+            raise AppError("PLATFORM_TRANSCRIPT_UNSAFE_URL", "文稿域名不能指向本机或内网地址。")
+    except socket.gaierror:
+        raise AppError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "文稿域名解析失败，请稍后重试。") from None
 
 
-def fetch_platform_transcript(episode, settings, check_stop, access_token=None):
-    check_stop()
-    # Preserve the missing-transcript error even when no credentials are configured.
+def fetch_platform_transcript(episode, access_token, max_bytes=MAX_TRANSCRIPT_BYTES):
     if not episode.transcript_media_id:
-        raise JobError("PLATFORM_TRANSCRIPT_MISSING", "小宇宙公开页面未提供这期节目的文稿标识。")
-    token = validate_access_token(access_token) if access_token is not None else read_access_token(settings)
-    url = _fetch_transcript_url(episode, token, check_stop)
+        raise AppError("PLATFORM_TRANSCRIPT_MISSING", "小宇宙公开页面未提供这期节目的文稿标识。")
+    token = validate_access_token(access_token)
+    url = _fetch_transcript_url(episode, token)
     try:
         # A new client also avoids carrying API cookies to the CDN.
         with httpx.Client(
@@ -241,13 +177,7 @@ def fetch_platform_transcript(episode, settings, check_stop, access_token=None):
             headers={"User-Agent": APP_USER_AGENT},
         ) as client:
             for _ in range(4):
-                check_stop()
-                try:
-                    validate_audio_url(url, TRANSCRIPT_HOSTS)
-                except JobError:
-                    raise JobError(
-                        "PLATFORM_TRANSCRIPT_UNSAFE_URL", "平台返回的文稿地址不在可信 HTTPS 域名范围内。"
-                    ) from None
+                validate_transcript_url(url)
                 with client.stream("GET", url) as response:
                     if response.is_redirect:
                         location = response.headers.get("location")
@@ -256,11 +186,11 @@ def fetch_platform_transcript(episode, settings, check_stop, access_token=None):
                         url = urljoin(url, location)
                         continue
                     if response.status_code != 200:
-                        raise JobError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "平台文稿文件暂不可读取。")
+                        raise AppError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "平台文稿文件暂不可读取。")
                     return parse_segments(
-                        _read_json(response, settings.max_transcript_bytes, check_stop), episode.duration
+                        _read_json(response, max_bytes), episode.duration
                     )
-        raise JobError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "平台文稿文件重定向次数过多或地址缺失。")
+        raise AppError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "平台文稿文件重定向次数过多或地址缺失。")
     except httpx.HTTPError:
-        # Never include signed URLs, response bodies, or credentials in job errors/logs.
-        raise JobError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "读取平台文稿时网络连接失败，请稍后重试。") from None
+        # Never include signed URLs, response bodies, or credentials in errors/logs.
+        raise AppError("PLATFORM_TRANSCRIPT_UNAVAILABLE", "读取平台文稿时网络连接失败，请稍后重试。") from None

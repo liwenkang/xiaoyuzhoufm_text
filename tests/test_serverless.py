@@ -1,10 +1,12 @@
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.errors import AppError
 from app.serverless import create_serverless_app
 from app.xiaoyuzhou import Episode
-from app.transcriber import Segment
+from app.platform_transcript import Segment
 
 
 def test_transcript_endpoint_returns_platform_segments(monkeypatch):
@@ -31,14 +33,13 @@ def test_transcript_endpoint_returns_platform_segments(monkeypatch):
     monkeypatch.setattr("app.serverless.fetch_episode", lambda _url: episode)
     received = {}
 
-    def fetch(_episode, _settings, _check_stop, access_token=None):
+    def fetch(_episode, access_token):
         received["token"] = access_token
         return result
 
     monkeypatch.setattr("app.serverless.fetch_platform_transcript", fetch)
-    settings = SimpleNamespace(xiaoyuzhou_access_token="token")
 
-    with TestClient(create_serverless_app(settings)) as client:
+    with TestClient(create_serverless_app()) as client:
         response = client.post("/api/transcript", json={"url": episode.source_url, "token": "user-token"})
 
     assert response.status_code == 200
@@ -52,8 +53,7 @@ def test_transcript_endpoint_returns_platform_segments(monkeypatch):
 
 
 def test_transcript_endpoint_rejects_cross_origin_post():
-    settings = SimpleNamespace(xiaoyuzhou_access_token="token")
-    with TestClient(create_serverless_app(settings)) as client:
+    with TestClient(create_serverless_app()) as client:
         response = client.post(
             "/api/transcript",
             json={"url": "a" * 24},
@@ -63,8 +63,56 @@ def test_transcript_endpoint_rejects_cross_origin_post():
 
 
 def test_transcript_endpoint_requires_token():
-    settings = SimpleNamespace(xiaoyuzhou_access_token="")
-    with TestClient(create_serverless_app(settings)) as client:
+    with TestClient(create_serverless_app()) as client:
         response = client.post("/api/transcript", json={"url": "a" * 24})
     assert response.status_code == 422
     assert "access token" in response.json()["detail"]
+
+
+def test_public_files_and_health_share_the_current_entrypoint():
+    with TestClient(create_serverless_app()) as client:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert "不要把 token 发给别人，token 失效后重新获取并替换即可。" in home.text
+        for name in ("app.js", "style.css"):
+            assert client.get(f"/static/{name}").status_code == 200
+        health = client.get("/api/health")
+        assert health.json() == {
+            "status": "ok", "transcript_mode": "platform", "auth_mode": "user_supplied",
+        }
+        assert health.headers["cache-control"] == "no-store"
+        for path in ("/api/jobs", "/api/local/options", "/api/platform/token"):
+            assert client.get(path).status_code == 404
+
+
+@pytest.mark.parametrize("token", [None, {"secret": "do-not-echo"}, "", "  ", "bad\nheader", "非ASCII"])
+def test_invalid_token_is_rejected_without_network_or_credential_echo(monkeypatch, token):
+    def unexpected(_url):
+        pytest.fail("Invalid tokens must be rejected before upstream requests")
+
+    monkeypatch.setattr("app.serverless.fetch_episode", unexpected)
+    with TestClient(create_serverless_app()) as client:
+        response = client.post("/api/transcript", json={"url": "a" * 24, "token": token})
+    assert response.status_code in {400, 422}
+    assert "do-not-echo" not in response.text
+    assert "bad" not in response.text
+    assert "非ASCII" not in response.text
+
+
+@pytest.mark.parametrize(("code", "status"), [
+    ("PLATFORM_AUTH_EXPIRED", 401), ("PLATFORM_AUTH_FORBIDDEN", 403),
+    ("PLATFORM_TRANSCRIPT_MISSING", 400),
+])
+def test_platform_errors_keep_their_status_and_disable_caching(monkeypatch, episode, code, status):
+    monkeypatch.setattr("app.serverless.fetch_episode", lambda _url: episode)
+
+    def fail(_episode, _token):
+        raise AppError(code, "请重新检查平台文稿访问权限。")
+
+    monkeypatch.setattr("app.serverless.fetch_platform_transcript", fail)
+    with TestClient(create_serverless_app()) as client:
+        response = client.post("/api/transcript", json={"url": episode.source_url, "token": "user-secret"})
+    assert response.status_code == status
+    assert response.json()["error_code"] == code
+    assert "user-secret" not in response.text
+    assert response.headers["cache-control"] == "no-store"

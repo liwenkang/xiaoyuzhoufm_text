@@ -1,48 +1,33 @@
-"""Small, stateless application for Vercel Functions.
+"""Stateless FastAPI entrypoint for the Vercel deployment and local development."""
 
-The legacy local application keeps a SQLite queue and a worker thread.  A
-serverless request cannot rely on either, so this module exposes one request
-that fetches and returns an existing Xiaoyuzhou transcript.
-"""
-
-from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .config import Settings
-from .errors import JobError
+from .errors import AppError
 from .platform_transcript import fetch_platform_transcript, validate_access_token
 from .xiaoyuzhou import fetch_episode, normalize_url
 
-STATIC_DIR = Path(__file__).parent / "static"
+PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
+
 
 class TranscriptRequest(BaseModel):
     url: str = Field(min_length=1, max_length=4096)
     token: SecretStr = Field(min_length=1, max_length=16384, repr=False)
 
 
-def create_serverless_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or Settings(transcript_mode="platform")
-
-    @asynccontextmanager
-    async def lifespan(_app):
-        yield
-
-    app = FastAPI(title="小宇宙 · 声音留存", version="0.2.0", lifespan=lifespan)
-    app.state.settings = settings
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+def create_serverless_app() -> FastAPI:
+    app = FastAPI(title="小宇宙 · 声音留存", version="0.2.0")
+    app.mount("/static", StaticFiles(directory=PUBLIC_DIR), name="static")
 
     @app.get("/", include_in_schema=False)
     def index():
-        return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+        return FileResponse(PUBLIC_DIR / "index.html", media_type="text/html")
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -63,10 +48,9 @@ def create_serverless_app(settings: Settings | None = None) -> FastAPI:
             )
         return response
 
-    @app.exception_handler(JobError)
-    async def job_error_handler(_request, exc):
+    @app.exception_handler(AppError)
+    async def app_error_handler(_request, exc):
         status = {
-            "PLATFORM_AUTH_REQUIRED": 503,
             "PLATFORM_AUTH_EXPIRED": 401,
             "PLATFORM_AUTH_FORBIDDEN": 403,
         }.get(exc.code, 400)
@@ -89,7 +73,7 @@ def create_serverless_app(settings: Settings | None = None) -> FastAPI:
         url, _episode_id = normalize_url(payload.url)
         token = validate_access_token(payload.token.get_secret_value())
         episode = fetch_episode(url)
-        result = fetch_platform_transcript(episode, settings, lambda: None, access_token=token)
+        result = fetch_platform_transcript(episode, token)
         episode_data = episode.as_dict()
         # Audio and internal media identifiers are not needed by the client.
         for key in ("audio_url", "shownotes", "transcript_media_id"):

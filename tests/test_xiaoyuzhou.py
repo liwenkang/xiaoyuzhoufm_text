@@ -1,6 +1,6 @@
 import json
 import pytest
-from app.errors import JobError
+from app.errors import AppError
 from app.xiaoyuzhou import normalize_url, parse_episode
 from conftest import EPISODE_ID, URL
 
@@ -32,7 +32,7 @@ def test_normalize(value):
     ],
 )
 def test_invalid_input_rejected(value):
-    with pytest.raises(JobError, match="链接"):
+    with pytest.raises(AppError, match="链接"):
         normalize_url(value)
 
 
@@ -77,13 +77,13 @@ def test_og_fallback_and_html_entities():
     ],
 )
 def test_restricted_audio_not_processed(payload):
-    with pytest.raises(JobError) as error:
+    with pytest.raises(AppError) as error:
         parse_episode(html_for(payload), URL, EPISODE_ID)
     assert error.value.code == "RESTRICTED_EPISODE"
 
 
 def test_page_without_audio_has_explicit_error():
-    with pytest.raises(JobError) as error:
+    with pytest.raises(AppError) as error:
         parse_episode("<html>changed</html>", URL, EPISODE_ID)
     assert error.value.code == "AUDIO_URL_MISSING"
 
