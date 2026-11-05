@@ -1,0 +1,10 @@
+.venv
+storage
+.secrets
+.pytest_cache
+.ruff_cache
+.git
+.vercel
+tests
+scripts
+run.ps1

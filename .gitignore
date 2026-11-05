@@ -8,3 +8,5 @@ storage/
 .secrets/
 *.log
 
+
+.vercel
