@@ -14,3 +14,4 @@ main{max-width:860px;margin:auto;padding:44px 28px}.intro{padding:10px 0 28px}.e
 @media(max-width:540px){.local-fields{grid-template-columns:1fr}}
 @media(max-width:540px){.token-input-row{flex-direction:column}.token-input-row input,.token-input-row button{width:100%}}
 .form-bottom{flex-wrap:wrap}.language-label select{max-width:100%}form>.audio-option{display:flex;justify-content:flex-start;font-weight:400;margin-top:16px;margin-bottom:0}.segment button:disabled{cursor:default;opacity:.65}
+.files a{max-width:100%;overflow-wrap:anywhere}

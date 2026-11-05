@@ -70,13 +70,16 @@ function exportContents(data) {
 
 function renderExports(data) {
   const contents = exportContents(data);
+  const name = Array.from(String(data.episode.title || data.episode.episode_id || '节目文稿')
+    .replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_').trim()).slice(0, 100).join('')
+    .replace(/[. ]+$/g, '') || '节目文稿';
   const files = $('files');
   files.replaceChildren(
-    file('transcript.txt', contents.txt, 'text/plain;charset=utf-8'),
-    file('transcript.md', contents.md, 'text/markdown;charset=utf-8'),
-    file('transcript.srt', contents.srt, 'application/x-subrip;charset=utf-8'),
-    file('transcript.vtt', contents.vtt, 'text/vtt;charset=utf-8'),
-    file('transcript.json', contents.json, 'application/json;charset=utf-8'),
+    file(`${name}.txt`, contents.txt, 'text/plain;charset=utf-8'),
+    file(`${name}.md`, contents.md, 'text/markdown;charset=utf-8'),
+    file(`${name}.srt`, contents.srt, 'application/x-subrip;charset=utf-8'),
+    file(`${name}.vtt`, contents.vtt, 'text/vtt;charset=utf-8'),
+    file(`${name}.json`, contents.json, 'application/json;charset=utf-8'),
   );
 }
 

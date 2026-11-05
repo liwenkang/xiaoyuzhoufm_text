@@ -8,7 +8,7 @@ test('serverless frontend uses the stateless transcript endpoint', () => {
   assert.match(source, /access-token/);
   assert.match(source, /post\(\{url, token\}\)/);
   assert.doesNotMatch(source, /\/api\/jobs/);
-  assert.match(source, /transcript\.srt/);
+  assert.match(source, /\$\{name\}\.srt/);
   assert.match(source, /localStorage/);
 });
 
