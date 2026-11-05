@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
 
@@ -23,11 +23,6 @@ class TranscriptRequest(BaseModel):
 
 def create_serverless_app() -> FastAPI:
     app = FastAPI(title="小宇宙 · 声音留存", version="0.2.0")
-    app.mount("/static", StaticFiles(directory=PUBLIC_DIR), name="static")
-
-    @app.get("/", include_in_schema=False)
-    def index():
-        return FileResponse(PUBLIC_DIR / "index.html", media_type="text/html")
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -85,6 +80,11 @@ def create_serverless_app() -> FastAPI:
             "end_timestamps_inferred": result.end_timestamps_inferred,
             "segments": [asdict(segment) for segment in result.segments],
         }
+
+    # Vercel serves public/ from its CDN and excludes it from the Function.
+    # Mount the same directory last for local development, after API routes.
+    if PUBLIC_DIR.is_dir():
+        app.mount("/", StaticFiles(directory=PUBLIC_DIR, html=True), name="frontend")
 
     return app
 

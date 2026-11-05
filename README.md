@@ -38,7 +38,7 @@
 ## 当前架构和边界
 
 ```text
-浏览器：public/index.html + app.js + style.css
+浏览器：public/index.html + public/static/app.js + style.css
   │ POST /api/transcript {url, token}
   ▼
 Vercel FastAPI Function：app/serverless.py
@@ -60,7 +60,7 @@ Vercel FastAPI Function：app/serverless.py
 
 - `pyproject.toml` 声明运行依赖 FastAPI、HTTPX，并通过 `tool.vercel.entrypoint = "app.serverless:app"` 指定入口。
 - `.python-version` 指定 Python 3.12，`vercel.json` 将 Function 最大执行时长设为 30 秒。
-- `public/` 是唯一前端源目录。FastAPI 从这里提供首页，并将脚本和样式挂载到 `/static/`，本地和部署使用同一份文件。
+- `public/` 是唯一前端源目录。Vercel 直接通过 CDN 提供首页和 `public/static/` 下的脚本、样式，文件不进入 Function。本地开发时 FastAPI 将同一目录挂载到根路径，接口路由优先。
 - `.vercelignore` 排除本地环境、缓存、测试和历史数据。
 - 不需要配置任何 access token 环境变量；请求超过 Function 时限会失败，可稍后重试。
 
@@ -135,7 +135,7 @@ run.ps1                 本地开发启动脚本
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check app tests
-node --check public/app.js
+node --check public/static/app.js
 node --test tests/platform_frontend.test.cjs
 ```
 

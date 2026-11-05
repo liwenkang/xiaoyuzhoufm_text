@@ -85,6 +85,13 @@ def test_public_files_and_health_share_the_current_entrypoint():
             assert client.get(path).status_code == 404
 
 
+def test_api_runs_without_the_cdn_only_public_directory(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.serverless.PUBLIC_DIR", tmp_path / "missing-public")
+    with TestClient(create_serverless_app()) as client:
+        assert client.get("/api/health").json()["status"] == "ok"
+        assert client.post("/api/transcript", json={"url": "a" * 24}).status_code == 422
+
+
 @pytest.mark.parametrize("token", [None, {"secret": "do-not-echo"}, "", "  ", "bad\nheader", "非ASCII"])
 def test_invalid_token_is_rejected_without_network_or_credential_echo(monkeypatch, token):
     def unexpected(_url):

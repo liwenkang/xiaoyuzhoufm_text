@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 test('serverless frontend uses the stateless transcript endpoint', () => {
-  const source = fs.readFileSync('public/app.js', 'utf8');
+  const source = fs.readFileSync('public/static/app.js', 'utf8');
   assert.match(source, /\/api\/transcript/);
   assert.match(source, /access-token/);
   assert.match(source, /post\(\{url, token\}\)/);
