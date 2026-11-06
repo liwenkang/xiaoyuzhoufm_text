@@ -1,140 +1,129 @@
 # 声音留存 · 小宇宙平台文稿
 
-在线地址：<https://xiaoyuzhoufmtext.vercel.app>
+粘贴小宇宙公开免费单集链接，读取平台已有的带时间戳文稿。**普通用户无需登录小宇宙，也无需获取、复制或填写 access token / refresh token。** 账号凭据由维护者在服务端统一管理，服务按需自动续期。
 
-粘贴小宇宙公开免费单集链接和自己的 access token，读取平台已经提供的带时间戳文稿。应用使用静态 HTML/CSS/JavaScript 和 Vercel 托管的 FastAPI Function，不需要维护服务器。
+在线使用：<https://xiaoyuzhoufmtext.vercel.app>
 
-## 使用方式
+前端为静态 HTML/CSS/JavaScript，后端为 Vercel 托管的 FastAPI Function。只读取已有文稿，不发起文稿生成，也不下载或识别音频。
 
-1. 在页面填写小宇宙单集链接、完整分享文字或 24 位单集 ID。
-2. 在 access token 输入框填写自己的 token。
-3. 点击「获取节目文字」，等候本次请求完成。
+## 使用（普通用户）
+
+1. 打开上方在线地址。
+2. 填写单集链接、完整分享文字或 24 位单集 ID。
+3. 点击「获取节目文字」，等待读取完成。
 4. 搜索文稿、点击时间戳复制，或下载 TXT、Markdown、SRT、VTT、JSON。
 
-token 输入框支持显示/隐藏；点击「如何获取？」会展开操作说明。读取期间会显示状态并防止重复提交；文稿搜索会高亮关键词并显示匹配段落数。
+整个使用流程只需节目链接，不需要打开开发者工具或配置任何凭据。以下部署和凭据录入步骤仅供维护者使用。
 
-下载按钮及文件名使用「节目名称 + 后缀」，例如 `EP9 有朋一起自驾，不亦乐乎？.txt`。不适合文件名的字符替换为下划线，名称最多保留 100 个字符。
+导出文件名使用节目名称，不适合文件名的字符替换为下划线，最多保留 100 个字符。最近查看最多保存 8 期完整文稿，存于当前浏览器的 `localStorage`，不跨设备同步；空间不足时当前文稿仍可查看和下载。
 
-最近查看最多保留 8 个节目的完整文稿，存于当前浏览器的 `localStorage`。这些记录不跨设备同步；清理网站数据会删除记录。浏览器存储空间不足时，当前文稿仍可查看和下载，但新记录可能无法保存。
+平台未提供的结束时间由下一段开始时间或节目时长推算，JSON 和 Markdown 会标注。JSON 的 `language` 为 `und`、`model` 为 `null`，不推测平台未提供的信息。
 
-## 获取 access token
+### 遇到问题
 
-页面内提供同样的操作说明，登录和复制均由使用者手动完成：
+- 服务繁忙或请求过多：稍后重新提交节目链接。
+- 服务账号登录失效或凭据未配置：通过页面中的「联系维护者」访问 <https://www.liwenkang.space/about>，由维护者处理；普通用户无需自行登录或获取 token。
+- 平台没有提供文稿：选择其他已有文稿的公开免费单集；本工具不会自动生成文稿。
 
-1. 在系统默认浏览器打开 [小宇宙账号登录页](https://accounts.xiaoyuzhoufm.com/login)。
-2. 按 `F12` 打开开发者工具，进入「网络（Network）」，勾选「保留日志（Preserve log）」。
-3. 使用手机号和验证码登录，在网络请求中搜索 `login-with-sms`。
-4. 选择 `https://web-api.xiaoyuzhoufm.com/v1/auth/login-with-sms` 请求。
-5. 打开「标头（Headers）」中的「响应头（Response Headers）」，找到 `x-jike-access-token`，只复制其值并粘贴到页面。
+## 自行部署与维护（仅维护者）
 
-不要复制请求头名称或 refresh token。不要把 token 发给别人，token 失效后重新获取并替换即可。登录页面或请求结构变化时，需要按平台实际情况调整获取方式。
+本节面向自行部署本项目或管理服务账号的维护者。直接使用在线服务的普通用户可以跳过；凭据首次录入、失效后的重新登录和更新均由维护者负责。
 
-## token 和数据如何处理
+需要 Python 3.12+。建议使用专门的服务账号，避免在其他工具中同时刷新同一组凭据。
 
-- token 保留在当前页面的密码输入框中，可以在页面打开期间重复使用；应用不将其保存到浏览器存储。
-- 提交时，浏览器通过 HTTPS 将 token 和节目链接发送到本站的 Function。token 会经过部署者的服务端，因此应只在信任的部署中输入。
-- Function 在本次请求中使用 token，仅向固定的 `api.xiaoyuzhoufm.com` 文稿接口发送。文稿 CDN 请求使用独立客户端，不转发 token 或 API Cookie；API 请求不跟随重定向，CDN 每次跳转都校验地址。
-- 应用不主动记录请求体或 token，不写入文件、数据库、环境变量、历史记录或导出文件；接口错误不会回显凭据或文稿签名地址。
-- 每个用户必须提供自己的 token。没有部署者共享 token，也没有环境变量或本机凭据文件的回退逻辑。
-
-## 当前架构和边界
-
-```text
-浏览器：public/index.html + public/static/app.js + style.css
-  │ POST /api/transcript {url, token}
-  ▼
-Vercel FastAPI Function：app/serverless.py
-  ├─ 读取公开节目页面，解析元数据和文稿标识
-  ├─ 使用本次请求的 token 获取已有文稿地址
-  ├─ 下载并校验文稿 JSON，转换毫秒时间戳
-  └─ 返回节目和 segments
-  ▼
-浏览器：展示、搜索、localStorage 历史、Blob 文件导出
-```
-
-平台没有现成文稿时直接提示错误，不发起平台文稿生成请求。没有本地识别、音频下载/播放、服务端任务历史、排队或后台重试；失败后可重新提交。接口依赖小宇宙的非公开协议，平台变更可能导致读取失败。
-
-平台未提供的段落结束时间由下一段开始时间或节目时长推算；JSON 的 `end_timestamps_inferred` 和 Markdown 会标注。JSON 的 `language` 为 `und`、`model` 为 `null`，不推测平台未提供的信息。
-
-## Vercel 部署与更新
-
-当前项目已关联 GitHub 的 `liwenkang/xiaoyuzhoufm_text` 仓库，生产分支为 `main`。
-
-- `pyproject.toml` 声明运行依赖 FastAPI、HTTPX，并通过 `tool.vercel.entrypoint = "app.serverless:app"` 指定入口。
-- `.python-version` 指定 Python 3.12，`vercel.json` 将 Function 最大执行时长设为 30 秒。
-- `public/` 是唯一前端源目录。Vercel 直接通过 CDN 提供首页和 `public/static/` 下的脚本、样式，文件不进入 Function。本地开发时 FastAPI 将同一目录挂载到根路径，接口路由优先。
-- `.vercelignore` 排除本地环境、缓存、测试和历史数据。
-- 不需要配置任何 access token 环境变量；请求超过 Function 时限会失败，可稍后重试。
-
-新部署：在 Vercel 导入仓库，使用仓库根目录，让其识别 FastAPI，构建与输出目录使用默认配置。
-
-更新：提交并推送 `main` 后查看 Vercel 的自动部署状态；已在本机登录并关联项目时，也可通过 CLI 发布：
-
-```powershell
-npx --yes vercel@latest deploy --prod --yes
-```
-
-部署后检查首页、`/static/app.js`、`/static/style.css` 和 `/api/health`，并在页面使用自己的 token 验证节目文稿读取。
-
-## 本地开发
-
-需要 Python 3.12；运行前端测试还需要 Node.js。Python 依赖统一声明在 `pyproject.toml`，`dev` 附加依赖包含 Uvicorn、pytest 和 Ruff。前端交互测试的 DOM 替身 LinkeDOM 通过 `package.json` / `package-lock.json` 管理，仅用于开发，不进入 Vercel 部署或用户页面。
-
-Windows 可直接执行：
-
-```powershell
-.\run.ps1
-```
-
-或手动安装和启动：
+### 本地运行
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e '.[dev]'
-.\.venv\Scripts\python.exe -m uvicorn app.serverless:app --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe -m app.credentials
+.\run.ps1
 ```
 
-用系统默认浏览器手动打开 `http://127.0.0.1:8000`，在页面填写 token，无需配置环境变量。
+录入程序依次提示输入 access token 和 refresh token，输入不显示、不作为命令参数，不写入命令历史。access token 可留空，refresh token 必填。程序只保存凭据，不联网验证；首次读取节目时才会验证。请在本机交互终端执行，不要通过管道传递凭据。
+
+未设置 `REDIS_URL` 时，本地将凭据、缓存和限流状态保存在 `.secrets/state.sqlite3`，可跨进程和重启使用。该目录被 Git 和 Vercel 部署排除，不会被静态资源路由提供。它包含明文凭据，仅应由维护者访问。
+
+在系统默认浏览器手动打开 `http://127.0.0.1:8000`。本项目不自动化浏览器登录。
+
+### 维护者手动取得初始凭据
+
+1. 在系统默认浏览器打开 <https://accounts.xiaoyuzhoufm.com/login>。
+2. 按 F12 打开开发者工具，进入「网络」，勾选「保留日志」。
+3. 使用手机号和验证码登录，搜索 `login-with-sms` 请求。
+4. 在该请求的响应头中找到 `x-jike-access-token` 和 `x-jike-refresh-token`，分别复制它们的值，录入本机命令行提示框。
+
+不要复制头名称、引号或额外空格，不要把凭据发到聊天、放进前端代码、提交到 Git 或作为命令行参数。若登录响应未提供 refresh token，需要手动确认平台当前登录协议；只有 access token 无法启用本项目的自动续期。不要分享整个网络日志，其中可能含凭据。
+
+### Vercel 部署
+
+线上必须配置持久化 Redis。未配置 `REDIS_URL` 时，Vercel 请求返回 503，不会回退到临时文件系统。
+
+1. 准备支持标准 Redis 协议、Lua/EVAL 和持久化的 Redis 实例（例如 Upstash 的 Redis TCP/TLS 连接）。配置保留数据和 `noeviction` 策略，避免共享凭据被缓存淘汰。Redis 数据丢失后必须重新录入账号。
+2. 在 Vercel 项目环境变量中设置 `REDIS_URL`，使用完整的 `rediss://...` 连接地址。它不是 `UPSTASH_REDIS_REST_URL` 或 REST token。本项目不自动读取 `.env`，本地需要使用当前进程环境变量或下面的交互录入方式。
+3. 在本机项目目录执行：
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m app.credentials --redis
+   ```
+
+   依次在隐藏输入中录入线上 Redis URL、access token（可留空）、refresh token。轮换后的凭据会直接保存到该 Redis，之后无需修改 Vercel 环境变量。
+4. 部署应用。环境变量的新增或修改需要重新部署；仅通过录入命令更新 Redis 中的账号凭据则无需重新部署。
+5. 在页面提交一个有平台文稿的公开免费单集，验证真实账号鉴权和读取。
+
+生产与预览环境应使用不同的 Redis 实例。每个实例的固定键前缀为 `xyztext:{v1}:`，不同账号或项目不要共用同一实例；克隆 Redis 备份到另一运行环境也会导致同一 refresh token 被并发刷新。
+
+项目生产分支为 `main`。运行依赖在 `pyproject.toml`，入口为 `app.serverless:app`；`public/` 由 Vercel CDN 提供，本地由 FastAPI 挂载。Function 最大执行时长为 180 秒，页面等待时间为 185 秒，以容纳首次读取和续期；超时后可以稍后重试。
+
+## 服务端续期、限流与缓存（维护者参考）
+
+- 若 token 可解析出 `exp`，到期前 60 秒按需刷新；该字段仅用于调度，不用作身份验证。无法解析到期时间时，先尝试文稿请求，收到 401 后刷新并最多重试一次。没有请求时不启动后台定时任务。
+- 续期固定请求 `https://api.xiaoyuzhoufm.com/app_auth_tokens.refresh`，refresh token 只放在 `x-jike-refresh-token` 请求头中；不跟随重定向，不读取或记录响应正文。
+- 新 access token 与轮换后的 refresh token 在锁内一起持久化，保存成功后才使用新 access token。若平台只返回新的 refresh token，也先保存，避免丢失轮换结果。
+- 凭据锁为 60 秒租约，锁释放和凭据写入均校验持有者。所有 Function 实例共享同一把锁；锁被占用时返回可重试的 503，不阻塞等待。
+- 刷新接口明确返回 401/403 时标记「需要维护者重新登录」，停止自动刷新；网络错误、异常响应或刷新后仍被拒绝会冷却 60 秒。文稿接口的 403 不当作 token 过期，不触发刷新。
+- 所有实例共享固定分钟窗口限流：总请求每分钟 30 次；未命中文稿缓存的请求每分钟 10 次。429 附 `Retry-After: 60`，限制不依赖可伪造的客户端 IP 请求头。
+- 缓存未命中的上游任务全局串行，同一时刻最多一个请求读取新文稿。锁占用时返回 503 和 `Retry-After: 5`；Function 异常结束后的锁最多保留 240 秒。此保守策略适合小流量试用。
+- 成功文稿按单集 ID 共享缓存 1 小时，仅缓存小于等于 1 MiB 的响应。失败不缓存，不保存文稿签名 URL；缓存中只含可以返回给页面的节目元数据和文稿。账号需要恢复期间，已缓存的文稿仍可读取。
+
+默认限流参数位于 `app/shared_transcript.py`，并非平台公布的安全额度；需要根据真实使用情况调整。限流和缓存减少账号压力，不能保证平台不限制共享账号。
+
+## 故障恢复和安全边界（维护者参考）
+
+出现「服务账号登录已失效」时，维护者手动重新登录，然后重新运行 `python -m app.credentials`（本地）或加 `--redis`（线上）覆盖凭据；录入操作使用同一把凭据锁，也会清除恢复标记和冷却状态。普通使用者无需提交 token。
+
+数据库连接失败返回脱敏的 503，程序不会继续使用未保存的轮换结果。但平台续期和本地保存不是跨系统事务：若平台已轮换而网络断开、进程中断或数据库写入失败，新凭据仍可能丢失，此时只能手动重新登录。
+
+文稿与刷新接口依赖非公开协议。续期不能避免账号被限制、凭据撤销、验证码或平台协议变更，也无法保证永久可用。当前协议参考社区实现：<https://github.com/hesorchen/xiaoyuzhou-juicer/blob/main/scripts/xyz_fetch.py>；上线前仍需真实账号验证。
+
+页面和 API 不提供读取、导出或在线修改凭据的管理接口。请求体只允许 `url`，旧的 `{url, token}` 请求被拒绝且不回显内容。后端凭据仅发送给固定小宇宙 API 域名，不发送到文稿 CDN；CDN 使用独立客户端，重定向与 DNS 校验继续保留。
+
+`/api/health` 只报告进程可响应和共享账号模式，不验证凭据、数据库或上游平台是否可用。公开页面的“服务已连接”也只表示本站接口可达。
 
 ## API
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| GET | `/api/health` | 状态、平台文稿模式和 `auth_mode: user_supplied`；不检查上游是否可达 |
-| POST | `/api/transcript` | 一次请求读取平台文稿 |
-| GET | `/docs` | FastAPI 交互式接口文档 |
+| GET | `/api/health` | `status: ok`、`transcript_mode: platform`、`auth_mode: server_shared` |
+| POST | `/api/transcript` | 只接受 `{"url":"小宇宙单集链接或 ID"}` |
+| GET | `/docs` | FastAPI 接口文档 |
 
-```http
-POST /api/transcript
-Content-Type: application/json
+成功响应包含 `episode`、`segments`、`transcript_source`、`source_note`、`end_timestamps_inferred`。每段包含秒数 `start` / `end`、`text` 和 `speaker`（当前为 `null`）。不会返回 token、音频地址或内部文稿标识。
 
-{"url":"https://www.xiaoyuzhoufm.com/episode/单集ID","token":"自己的 access token"}
-```
+错误响应包含 `detail`，业务错误另有 `error_code`。无效输入返回 400/422，文稿访问被拒绝返回 403，限流返回 429，共享凭据缺失、需要恢复、服务繁忙或存储故障返回 503。所有 API 响应设置 `Cache-Control: no-store`；服务端文稿缓存与浏览器 HTTP 缓存互相独立。
 
-成功响应包含 `episode`、`segments`、`transcript_source: xiaoyuzhou`、`source_note`、`end_timestamps_inferred`。每段包含秒数 `start` / `end`、`text` 和 `speaker`（当前为 `null`）。不会返回 token、音频地址或内部文稿标识。
-
-错误响应包含 `detail`；业务错误另有 `error_code`。缺失/类型不符的参数返回 422，token 被拒绝返回 401，无访问权限返回 403，其他输入或文稿读取错误通常返回 400。API 响应设置 `Cache-Control: no-store`。
-
-## 项目结构
+## 项目结构与验证
 
 ```text
-app/
-  serverless.py          FastAPI 入口、请求校验、响应和静态资源
-  platform_transcript.py 平台协议、临时 token、CDN 校验和时间戳解析
-  xiaoyuzhou.py          链接规范化和节目公开页面解析
-  errors.py             可返回给用户的业务错误
-public/                 唯一 HTML/CSS/JavaScript 源目录
-tests/                 离线接口、文稿解析和前端测试
-pyproject.toml          运行/开发依赖、测试/lint 和 Vercel 入口
-package.json           前端交互测试命令与开发依赖
-DESIGN.md              页面视觉与交互约定
-.python-version         Python 3.12
-vercel.json             Function 时长配置
-.vercelignore           部署排除项
-run.ps1                 本地开发启动脚本
+app/serverless.py          API 和静态资源
+app/shared_transcript.py   共享账号读取、限流和文稿缓存
+app/credentials.py         自动续期、凭据轮换和维护者录入命令
+app/state.py               SQLite / Redis、原子计数和带持有者校验的租约
+app/platform_transcript.py 平台文稿协议、CDN 校验和时间戳解析
+app/xiaoyuzhou.py          链接规范化和公开免费节目解析
+public/                   前端 HTML、脚本和样式
+tests/                    离线后端和前端测试
 ```
-
-## 验证
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
@@ -144,6 +133,6 @@ npm ci --ignore-scripts
 npm test
 ```
 
-自动测试使用 HTTP 替身，不联网获取真实文稿，也不需要真实 token。覆盖链接解析、平台文稿时间戳、上游鉴权错误、token 与 CDN 隔离、重定向和私网阻断，以及当前无状态接口。
+自动测试不使用真实凭据，也不访问小宇宙。Redis 测试使用 FakeRedis 和真实 Lua 执行器，覆盖轮换、刷新互斥、持有者校验、持久化失败、续期冷却、恢复、限流和缓存；它不能替代线上 Redis 连通性和真实协议验证。前端测试覆盖只提交链接、帮助、重复提交、错误恢复、搜索、复制、历史和导出。
 
-前端测试还覆盖 token 显示与帮助、重复提交、加载恢复、网络和剪贴板错误、搜索高亮、历史数据容错及导出文件名。DOM 测试不替代真实浏览器中的视觉和键盘检查。
+遵守浏览器限制，不运行浏览器自动化；真实登录、凭据录入、页面视觉和线上联调需要在系统默认浏览器或本机交互终端手动完成。

@@ -2,19 +2,18 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-test('serverless frontend uses the stateless transcript endpoint', () => {
+test('frontend sends only the episode URL and keeps exports and history', () => {
   const source = fs.readFileSync('public/static/app.js', 'utf8');
   assert.match(source, /\/api\/transcript/);
-  assert.match(source, /access-token/);
-  assert.match(source, /post\(\{url, token\}\)/);
-  assert.doesNotMatch(source, /\/api\/jobs/);
+  assert.match(source, /post\(\{url\}\)/);
+  assert.doesNotMatch(source, /access-token|refresh.token|\/api\/jobs/);
   assert.match(source, /\$\{name\}\.srt/);
   assert.match(source, /localStorage/);
 });
 
-test('page explains how users obtain the token', () => {
+test('public help explains URL-only use and maintenance recovery', () => {
   const html = fs.readFileSync('public/index.html', 'utf8');
-  assert.match(html, /login-with-sms/);
-  assert.match(html, /x-jike-access-token/);
-  assert.match(html, /不会保存到服务器或浏览器存储/);
+  assert.match(html, /无需登录或填写账号凭据/);
+  assert.match(html, /联系维护者/);
+  assert.doesNotMatch(html, /login-with-sms|x-jike|access.token|refresh.token/);
 });

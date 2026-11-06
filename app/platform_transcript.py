@@ -1,4 +1,4 @@
-"""Read existing Xiaoyuzhou transcripts using the request's user-supplied access token.
+"""Read existing Xiaoyuzhou transcripts using a server-side access token.
 
 The endpoint is not a documented public API. Keep its protocol isolated here.
 Credentials are sent only to the fixed API origin, never to transcript/CDN URLs.

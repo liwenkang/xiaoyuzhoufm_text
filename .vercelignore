@@ -1,6 +1,7 @@
 .venv
 storage
 .secrets
+.env*
 .pytest_cache
 .ruff_cache
 .git

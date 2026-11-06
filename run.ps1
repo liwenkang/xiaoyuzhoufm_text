@@ -10,6 +10,7 @@ if (-not (Test-Path -LiteralPath $taskPython)) {
 if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed. Run again to retry." }
 $env:PYTHONUTF8 = "1"
 Write-Host "Podcast workspace: http://127.0.0.1:$Port"
-Write-Host "Enter your access token on the page. Press Ctrl+C to stop."
+Write-Host "Paste an episode URL on the page. Configure credentials first with: .venv\Scripts\python.exe -m app.credentials"
+Write-Host "Press Ctrl+C to stop."
 & $taskPython -m uvicorn app.serverless:app --host 127.0.0.1 --port $Port
 exit $LASTEXITCODE

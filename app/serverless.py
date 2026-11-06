@@ -1,28 +1,28 @@
-"""Stateless FastAPI entrypoint for the Vercel deployment and local development."""
+"""FastAPI entrypoint using server-only shared credentials."""
 
-from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field
 
 from .errors import AppError
-from .platform_transcript import fetch_platform_transcript, validate_access_token
-from .xiaoyuzhou import fetch_episode, normalize_url
+from .shared_transcript import SharedTranscriptService
+from .xiaoyuzhou import normalize_url
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
 
 
 class TranscriptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     url: str = Field(min_length=1, max_length=4096)
-    token: SecretStr = Field(min_length=1, max_length=16384, repr=False)
 
 
-def create_serverless_app() -> FastAPI:
+def create_serverless_app(service=None) -> FastAPI:
     app = FastAPI(title="小宇宙 · 声音留存", version="0.2.0")
+    shared_service = service if service is not None else SharedTranscriptService()
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -48,38 +48,34 @@ def create_serverless_app() -> FastAPI:
         status = {
             "PLATFORM_AUTH_EXPIRED": 401,
             "PLATFORM_AUTH_FORBIDDEN": 403,
+            "SHARED_RATE_LIMITED": 429,
+            "SHARED_AUTH_UNCONFIGURED": 503,
+            "SHARED_AUTH_RECOVERY_REQUIRED": 503,
+            "SHARED_AUTH_REFRESH_FAILED": 503,
+            "SHARED_STORE_UNAVAILABLE": 503,
+            "SHARED_SERVICE_BUSY": 503,
         }.get(exc.code, 400)
-        return JSONResponse({"error_code": exc.code, "detail": str(exc)}, status_code=status)
+        headers = {"Retry-After": "60"} if status == 429 else {}
+        if exc.code == "SHARED_SERVICE_BUSY":
+            headers["Retry-After"] = "5"
+        return JSONResponse({"error_code": exc.code, "detail": str(exc)}, status_code=status, headers=headers)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(_request, _exc):
-        return JSONResponse({"detail": "请填写小宇宙单集链接和 access token。"}, status_code=422)
+        return JSONResponse({"detail": "请仅提交有效的小宇宙单集链接。"}, status_code=422)
 
     @app.get("/api/health")
     def health():
         return {
             "status": "ok",
             "transcript_mode": "platform",
-            "auth_mode": "user_supplied",
+            "auth_mode": "server_shared",
         }
 
     @app.post("/api/transcript")
     def transcript(payload: TranscriptRequest):
-        url, _episode_id = normalize_url(payload.url)
-        token = validate_access_token(payload.token.get_secret_value())
-        episode = fetch_episode(url)
-        result = fetch_platform_transcript(episode, token)
-        episode_data = episode.as_dict()
-        # Audio and internal media identifiers are not needed by the client.
-        for key in ("audio_url", "shownotes", "transcript_media_id"):
-            episode_data.pop(key, None)
-        return {
-            "episode": episode_data,
-            "transcript_source": "xiaoyuzhou",
-            "source_note": "文字来自小宇宙平台已有文稿，未在本机重新识别。",
-            "end_timestamps_inferred": result.end_timestamps_inferred,
-            "segments": [asdict(segment) for segment in result.segments],
-        }
+        url, episode_id = normalize_url(payload.url)
+        return shared_service.fetch(url, episode_id)
 
     # Vercel serves public/ from its CDN and excludes it from the Function.
     # Mount the same directory last for local development, after API routes.

@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "app/serverless.py": {
-      "maxDuration": 30
+      "maxDuration": 180
     }
   }
 }

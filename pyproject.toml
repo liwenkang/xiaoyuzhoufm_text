@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.6,<1",
     "httpx>=0.28.1,<1",
+    "redis>=5,<8",
 ]
 
 [project.optional-dependencies]
@@ -12,6 +13,7 @@ dev = [
     "pytest>=8,<10",
     "ruff>=0.9,<1",
     "uvicorn>=0.34,<1",
+    "fakeredis[lua]>=2.26,<3",
 ]
 
 [build-system]

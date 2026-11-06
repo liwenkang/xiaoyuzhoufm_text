@@ -23,7 +23,7 @@ function page({fetchTranscript, history = [], clipboard} = {}) {
     URL: {createObjectURL: () => `blob:test-${++nextUrl}`, revokeObjectURL: (url) => revoked.push(url)},
     setTimeout: () => 1, clearTimeout: () => {},
     fetch: async (path, options) => {
-      if (path === '/api/health') return {ok: true, json: async () => ({auth_mode: 'user_supplied'})};
+      if (path === '/api/health') return {ok: true, json: async () => ({auth_mode: 'server_shared'})};
       requests.push({path, options});
       return fetchTranscript ? fetchTranscript(path, options) : {ok: true, json: async () => episode()};
     },
@@ -33,8 +33,7 @@ function page({fetchTranscript, history = [], clipboard} = {}) {
   const dispatch = (id, type) => element(id).dispatchEvent(new window.Event(type, {bubbles: true, cancelable: true}));
   const fill = () => {
     element('url').value = 'a'.repeat(24);
-    element('access-token').value = 'private-user-token';
-    dispatch('access-token', 'input');
+    dispatch('url', 'input');
   };
   return {document, element, dispatch, fill, context, storage, requests, revoked};
 }
@@ -48,17 +47,14 @@ function episode(id = 'a'.repeat(24)) {
   };
 }
 
-test('token visibility and help are accessible without persisting credentials', () => {
+test('the form needs only a URL and the help is accessible', () => {
   const ui = page();
+  assert.equal(ui.element('submit').disabled, true);
+  assert.equal(ui.element('access-token'), null);
   ui.fill();
-  ui.dispatch('toggle-token', 'click');
-  assert.equal(ui.element('access-token').type, 'text');
-  assert.equal(ui.element('toggle-token').getAttribute('aria-pressed'), 'true');
-  ui.dispatch('toggle-token', 'click');
-  assert.equal(ui.element('access-token').type, 'password');
-  ui.document.querySelector('a[href="#token-guide"]').click();
-  assert.equal(ui.element('token-guide').open, true);
-  assert.doesNotMatch([...ui.storage.values()].join(''), /private-user-token/);
+  assert.equal(ui.element('submit').disabled, false);
+  ui.document.querySelector('a[href="#usage-guide"]').click();
+  assert.equal(ui.element('usage-guide').open, true);
 });
 
 test('a pending request blocks repeated submits and restores controls after success', async () => {
@@ -68,7 +64,7 @@ test('a pending request blocks repeated submits and restores controls after succ
   ui.fill();
   ui.dispatch('form', 'submit');
   ui.dispatch('form', 'submit');
-  ui.dispatch('access-token', 'input');
+  ui.dispatch('url', 'input');
   assert.equal(ui.requests.length, 1);
   assert.equal(ui.element('submit').disabled, true);
   assert.equal(ui.element('form').getAttribute('aria-busy'), 'true');
@@ -80,7 +76,8 @@ test('a pending request blocks repeated submits and restores controls after succ
   assert.equal(ui.element('request-progress').classList.contains('hidden'), true);
   assert.match(ui.element('form-message').textContent, /已读取 2 段/);
   assert.equal(ui.document.querySelectorAll('.segment').length, 2);
-  assert.doesNotMatch(ui.storage.get('platformTranscripts'), /private-user-token/);
+  assert.deepEqual(JSON.parse(ui.requests[0].options.body), {url: 'a'.repeat(24)});
+  assert.doesNotMatch(ui.storage.get('platformTranscripts'), /token/);
 });
 
 test('network failure explains recovery and allows retry', async () => {
@@ -94,12 +91,12 @@ test('network failure explains recovery and allows retry', async () => {
 });
 
 test('an authentication failure keeps the entered values and displays the recovery message', async () => {
-  const ui = page({fetchTranscript: () => ({ok: false, json: async () => ({detail: 'token 已失效，请重新获取。'})})});
+  const ui = page({fetchTranscript: () => ({ok: false, json: async () => ({detail: '服务账号登录已失效，请联系维护者。'})})});
   ui.fill();
   ui.dispatch('form', 'submit');
   await flush();
-  assert.equal(ui.element('form-message').textContent, 'token 已失效，请重新获取。');
-  assert.equal(ui.element('access-token').value, 'private-user-token');
+  assert.equal(ui.element('form-message').textContent, '服务账号登录已失效，请联系维护者。');
+  assert.equal(ui.element('url').value, 'a'.repeat(24));
   assert.equal(ui.element('submit').disabled, false);
   assert.equal(ui.element('detail').classList.contains('hidden'), true);
 });

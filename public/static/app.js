@@ -7,7 +7,7 @@ let isLoading = false;
 let exportUrls = [];
 
 function updateSubmitButton() {
-  $('submit').disabled = isLoading || !$('url').value.trim() || !$('access-token').value.trim();
+  $('submit').disabled = isLoading || !$('url').value.trim();
 }
 
 function setLoading(value) {
@@ -17,7 +17,6 @@ function setLoading(value) {
   $('submit-label').textContent = value ? '正在读取…' : '获取节目文字';
   $('request-progress').classList.toggle('hidden', !value);
   $('url').readOnly = value;
-  $('access-token').readOnly = value;
   updateSubmitButton();
 }
 
@@ -55,7 +54,7 @@ function timestamp(seconds, separator = ',') {
 
 async function api(path, options) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 35000);
+  const timeout = setTimeout(() => controller.abort(), 185000);
   try {
     const response = await fetch(path, {...options, signal: controller.signal});
     const body = await response.json().catch(() => ({}));
@@ -268,10 +267,9 @@ $('form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (isLoading) return;
   const url = $('url').value.trim();
-  const token = $('access-token').value.trim();
-  if (!url || !token) {
+  if (!url) {
     $('form-message').className = 'message error';
-    $('form-message').textContent = '请填写节目链接和 access token。';
+    $('form-message').textContent = '请填写节目链接。';
     updateSubmitButton();
     return;
   }
@@ -279,7 +277,7 @@ $('form').addEventListener('submit', async (event) => {
   $('form-message').className = 'message';
   $('form-message').textContent = '正在读取平台文稿…';
   try {
-    const data = await api('/api/transcript', post({url, token}));
+    const data = await api('/api/transcript', post({url}));
     render(data);
     saveHistory(data);
     $('form-message').textContent = `已读取 ${data.segments.length} 段平台文稿。`;
@@ -292,27 +290,19 @@ $('form').addEventListener('submit', async (event) => {
 });
 
 $('url').addEventListener('input', updateSubmitButton);
-$('access-token').addEventListener('input', updateSubmitButton);
 $('search').addEventListener('input', renderSegments);
-$('toggle-token').addEventListener('click', () => {
-  const visible = $('access-token').type === 'password';
-  $('access-token').type = visible ? 'text' : 'password';
-  $('toggle-token').textContent = visible ? '隐藏' : '显示';
-  $('toggle-token').setAttribute('aria-pressed', String(visible));
-  $('toggle-token').setAttribute('aria-label', visible ? '隐藏 access token' : '显示 access token');
-});
-document.querySelectorAll('a[href="#token-guide"]').forEach((link) => {
+document.querySelectorAll('a[href="#usage-guide"]').forEach((link) => {
   link.addEventListener('click', () => {
-    $('token-guide').open = true;
-    $('token-guide').querySelector('summary').focus({preventScroll: true});
+    $('usage-guide').open = true;
+    $('usage-guide').querySelector('summary').focus({preventScroll: true});
   });
 });
 $('cover').addEventListener('error', () => $('cover').classList.add('hidden'));
 loadHistory();
 api('/api/health').then((data) => {
-  $('platform-config').textContent = data.auth_mode === 'user_supplied'
-    ? '服务可用 · 请使用自己的 access token'
-    : '请填写自己的 access token 后读取文稿。';
+  $('platform-config').textContent = data.auth_mode === 'server_shared'
+    ? '服务已连接 · 粘贴节目链接即可读取'
+    : '服务配置已变更，请刷新页面后重试。';
 }).catch(() => {
   $('platform-config').classList.add('error');
   $('platform-config').textContent = '暂时无法连接服务，请刷新页面后重试。';
